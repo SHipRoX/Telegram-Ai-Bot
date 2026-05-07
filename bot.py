@@ -1,18 +1,20 @@
 import os
 import logging
-import requests
+from groq import Groq
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # === CONFIG ===
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "llama3-8b-8192"
 
 # === LOGGING ===
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# === GROQ CLIENT ===
+client = Groq(api_key=GROQ_API_KEY)
 
 # === SYSTEM PROMPT ===
 SYSTEM_PROMPT = """Ikaw ay isang helpful, friendly, at matalinong AI assistant. 
@@ -21,26 +23,18 @@ Pwede kang sumagot sa Filipino, Tagalog, o English depende sa tanong."""
 
 # === GROQ API CALL ===
 def ask_groq(user_message: str, chat_history: list) -> str:
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend(chat_history[-10:])  # last 10 messages lang para hindi masyadong malaki
-    messages.append({"role": "user", "content": user_message})
-
-    payload = {
-        "model": MODEL,
-        "messages": messages,
-        "max_tokens": 1024,
-        "temperature": 0.7
-    }
-
     try:
-        response = requests.post(GROQ_API_URL, headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages.extend(chat_history[-10:])
+        messages.append({"role": "user", "content": user_message})
+
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            max_tokens=1024,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
     except Exception as e:
         logger.error(f"Groq error: {e}")
         return "Sorry, may error sa AI. Subukan ulit mamaya!"
@@ -62,7 +56,6 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === MESSAGE HANDLER ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Ignore kung walang message
     if not update.message or not update.message.text:
         return
 
@@ -80,7 +73,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         if not is_mentioned and not is_reply_to_bot:
             return
-        # Tanggalin ang mention sa message
         user_message = user_message.replace(f"@{bot_username}", "").strip()
 
     # Init chat history
@@ -105,13 +97,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === MAIN ===
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("clear", clear))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
     logger.info("Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
+    
