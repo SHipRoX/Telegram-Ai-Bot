@@ -7,7 +7,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 # === CONFIG ===
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-MODEL = "llama3-8b-8192"
+MODEL = "llama-3.1-8b-instant"
 
 # === LOGGING ===
 logging.basicConfig(level=logging.INFO)
