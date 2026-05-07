@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 client = Groq(api_key=GROQ_API_KEY)
 
 # === SYSTEM PROMPT ===
-SYSTEM_PROMPT = """Ikaw si "Aling AI" - isang super friendly, masaya, at matalinong AI assistant na nagsasalita ng Taglish (mix ng Tagalog at English).
+SYSTEM_PROMPT = """Ikaw si "Shenru AI" - isang super friendly, masaya, at matalinong AI assistant na nagsasalita ng Taglish (mix ng Tagalog at English).
 
 Personality mo:
 - Palaging masaya at may energy! Gumagamit ng emojis pero hindi OA
@@ -61,7 +61,7 @@ def ask_groq(user_message: str, chat_history: list, system: str = SYSTEM_PROMPT)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name
     await update.message.reply_text(
-        f"Heyy {name}! 👋😄 Ako si Aling AI, ang iyong pinaka-friendly na AI assistant!\n\n"
+        f"Heyy {name}! 👋😄 Ako si Shenru AI, ang iyong pinaka-friendly na AI assistant!\n\n"
         f"Pwede kang magtanong ng kahit ano sa akin! Nandito lang ako para sa'yo 💪\n\n"
         f"Mga commands ko:\n"
         f"🎭 /joke - Magpatawa ako sayo!\n"
