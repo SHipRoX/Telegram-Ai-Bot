@@ -119,20 +119,43 @@ async def quote(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === /weather COMMAND ===
 async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /weather [lungsod]\nHalimbawa: /weather Manila")
+        await update.message.reply_text(
+            "Usage: /weather [lungsod]\n"
+            "Halimbawa: /weather Manila\n\n"
+            "💡 Note: Gumamit ng specific na lungsod o bayan, hindi province.\n"
+            "✅ /weather Borongan\n"
+            "❌ /weather Southern Samar"
+        )
         return
 
     city = " ".join(context.args)
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
     try:
+        # Try exact search muna
         url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric"
         res = requests.get(url, timeout=10)
         data = res.json()
 
         if data.get("cod") != 200:
-            await update.message.reply_text(f"Hindi mahanap ang '{city}'. Check mo ang spelling.")
-            return
+            # Try with Philippines appended
+            url2 = f"https://api.openweathermap.org/data/2.5/weather?q={city},PH&appid={WEATHER_API_KEY}&units=metric"
+            res2 = requests.get(url2, timeout=10)
+            data2 = res2.json()
+
+            if data2.get("cod") == 200:
+                data = data2
+            else:
+                await update.message.reply_text(
+                    f"❌ Hindi mahanap ang *'{city}'*.\n\n"
+                    f"💡 *Tips:*\n"
+                    f"• Gumamit ng specific na lungsod o bayan, hindi province\n"
+                    f"• Halimbawa: `/weather Borongan` imbes na `/weather Southern Samar`\n"
+                    f"• `/weather Calbayog` imbes na `/weather Samar`\n"
+                    f"• Subukan din ng English spelling ng lungsod",
+                    parse_mode="Markdown"
+                )
+                return
 
         temp = data["main"]["temp"]
         feels = data["main"]["feels_like"]
@@ -180,41 +203,54 @@ async def wiki(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
     try:
-        # Search muna para makuha ang tamang page title
         search_url = "https://en.wikipedia.org/w/api.php"
         search_params = {
             "action": "query",
             "list": "search",
             "srsearch": topic,
             "format": "json",
-            "srlimit": 1
+            "srlimit": 3,
+            "utf8": 1
         }
         search_res = requests.get(search_url, params=search_params, timeout=10)
+        search_res.raise_for_status()
         search_data = search_res.json()
 
         results = search_data.get("query", {}).get("search", [])
         if not results:
-            await update.message.reply_text(f"Walang nakitang resulta para sa '{topic}'. Try ng ibang keyword.")
+            await update.message.reply_text(
+                f"Walang nakitang resulta para sa *'{topic}'*.\n\n"
+                f"💡 Tips:\n"
+                f"• Subukan ng English spelling\n"
+                f"• Gawing mas specific ang search\n"
+                f"• Halimbawa: `/wiki Southern Samar` (walang 'Philippines')",
+                parse_mode="Markdown"
+            )
             return
 
-        page_title = results[0]["title"]
+        extract = ""
+        page_title = ""
 
-        # Kuhanin ang summary ng page
-        summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(page_title)}"
-        summary_res = requests.get(summary_url, timeout=10)
-        summary_data = summary_res.json()
+        for result in results:
+            candidate_title = result["title"]
+            summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(candidate_title)}"
+            summary_res = requests.get(summary_url, timeout=10)
 
-        extract = summary_data.get("extract", "")
+            if summary_res.status_code == 200:
+                summary_data = summary_res.json()
+                candidate_extract = summary_data.get("extract", "")
+                if candidate_extract and len(candidate_extract) > 50:
+                    extract = candidate_extract[:1200]
+                    page_title = candidate_title
+                    break
+
         if not extract:
-            await update.message.reply_text(f"Nahanap ko ang page pero walang laman. Try ng ibang keyword.")
+            await update.message.reply_text("Nahanap ko ang topic pero walang sapat na impormasyon. Try ng ibang keyword.")
             return
-
-        # Limit sa 1000 chars para hindi masyadong mahaba
-        extract = extract[:1000]
 
         reply = ask_groq(
             f"I-summarize at i-explain sa Taglish ang sumusunod na impormasyon tungkol sa '{page_title}'. "
-            f"Maging concise pero informative. Huwag kalimutang magdagdag ng key facts:\n\n{extract}",
+            f"Maging concise pero informative. Isama ang key facts:\n\n{extract}",
             [],
             SYSTEM_PROMPT
         )
@@ -227,9 +263,12 @@ async def wiki(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except requests.exceptions.Timeout:
         await update.message.reply_text("Timeout ang Wikipedia. Subukan ulit.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Wiki request error: {e}")
+        await update.message.reply_text("Hindi ma-reach ang Wikipedia ngayon. Subukan ulit mamaya.")
     except Exception as e:
         logger.error(f"Wiki error: {e}")
-        await update.message.reply_text("May error sa Wikipedia search. Subukan ulit mamaya.")
+        await update.message.reply_text("May unexpected error sa Wikipedia search. Subukan ulit mamaya.")
 
 # === /image COMMAND ===
 async def image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -244,7 +283,7 @@ async def image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         encoded = requests.utils.quote(prompt)
         image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=512&height=512&nologo=true&seed={hash(prompt) % 10000}"
-        
+
         res = requests.get(image_url, timeout=30)
         if res.status_code == 200:
             await update.message.reply_photo(
@@ -270,7 +309,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     chat_type = update.message.chat.type
 
-    # Sa group/channel, sumasagot lang kung may @mention o reply sa bot
     if chat_type in ["group", "supergroup", "channel"]:
         bot_username = context.bot.username
         is_mentioned = f"@{bot_username}" in user_message
@@ -297,8 +335,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === MAIN ===
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
-    # Set commands para lalabas sa / sa GC
     app.post_init = set_commands
 
     app.add_handler(CommandHandler("start", start))
@@ -315,3 +351,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+        
